@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import type {
+  NovaDevtoolsElementPickerState,
   NovaDevtoolsNodeDetails,
+  NovaDevtoolsSerializable,
   NovaDevtoolsStyleTrace,
   NovaDevtoolsTreeSnapshot,
 } from '@/protocol'
@@ -17,11 +19,48 @@ const styleDraft = ref('')
 const errorMessage = ref('')
 const statusMessage = ref('Bridge idle')
 const loading = ref(false)
+const inspecting = ref(false)
+const shellSplitRef = ref<HTMLElement | null>(null)
+const topPanesRef = ref<HTMLElement | null>(null)
+const stylesContentRef = ref<HTMLElement | null>(null)
+const topPaneRatio = ref(48)
+const treePaneRatio = ref(40)
+const styleEditorRatio = ref(48)
 
 let refreshTimer: number | undefined
+let pickerTimer: number | undefined
+let colorApplyTimer: number | undefined
+let resizeDispose: (() => void) | undefined
+
+interface StyleInspectorRow {
+  source: string
+  path: string
+  label: string
+  value: string
+  colorHex: string | null
+  declarationKey: string | null
+}
 
 const hasRuntime = computed(() => tree.value.apps.length > 0)
 const diagnostics = computed(() => styleTrace.value?.diagnostics ?? [])
+const shellSplitStyle = computed<Record<string, string>>(() => ({
+  '--top-pane-size': `${topPaneRatio.value}%`,
+}))
+const topPanesStyle = computed<Record<string, string>>(() => ({
+  '--tree-pane-size': `${treePaneRatio.value}%`,
+}))
+const stylesContentStyle = computed<Record<string, string>>(() => ({
+  '--style-editor-size': `${styleEditorRatio.value}%`,
+}))
+const styleRows = computed(() => {
+  const trace = styleTrace.value
+  if (!trace) return []
+
+  return [
+    ...flattenStyleRows('Cascade', trace.mergedDeclarations),
+    ...flattenStyleRows('Current props', trace.currentProps),
+  ]
+})
 
 onMounted(() => {
   void refreshAll()
@@ -32,6 +71,10 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   if (refreshTimer) window.clearInterval(refreshTimer)
+  stopPickerPolling()
+  stopResizeTracking()
+  if (colorApplyTimer) window.clearTimeout(colorApplyTimer)
+  void requestNovaDevtools('stopElementPicker').catch(() => undefined)
   void requestNovaDevtools('clearHighlight').catch(() => undefined)
 })
 
@@ -61,6 +104,46 @@ async function selectNode(nodeId: string): Promise<void> {
   selectedId.value = nodeId
   await inspectNode(nodeId)
   await requestNovaDevtools('highlightNode', { nodeId }).catch(() => undefined)
+}
+
+/** Включает или выключает page-side picker, похожий на Chrome Elements selector. */
+async function toggleElementPicker(): Promise<void> {
+  try {
+    if (inspecting.value) {
+      await requestNovaDevtools<NovaDevtoolsElementPickerState>('stopElementPicker')
+      inspecting.value = false
+      stopPickerPolling()
+      return
+    }
+
+    const state = await requestNovaDevtools<NovaDevtoolsElementPickerState>('startElementPicker')
+    inspecting.value = state.active
+    startPickerPolling()
+  } catch (error) {
+    inspecting.value = false
+    stopPickerPolling()
+    errorMessage.value = error instanceof Error ? error.message : String(error)
+  }
+}
+
+/** Читает hovered/selected node из inspected page во время picker mode. */
+async function pollElementPicker(): Promise<void> {
+  try {
+    const state = await requestNovaDevtools<NovaDevtoolsElementPickerState>('getElementPickerState')
+    inspecting.value = state.active
+    const nodeId = state.hoveredNodeId ?? state.selectedNodeId
+
+    if (nodeId && nodeId !== selectedId.value) {
+      selectedId.value = nodeId
+      await inspectNode(nodeId)
+    }
+
+    if (!state.active) stopPickerPolling()
+  } catch (error) {
+    inspecting.value = false
+    stopPickerPolling()
+    errorMessage.value = error instanceof Error ? error.message : String(error)
+  }
 }
 
 /** Читает details и style trace выбранной node. */
@@ -102,16 +185,224 @@ async function applyStyleSheet(): Promise<void> {
   if (!selectedId.value || !styleTrace.value) return
 
   try {
-    styleTrace.value = await requestNovaDevtools<NovaDevtoolsStyleTrace | null>('setRootStyleSheet', {
-      rootComponentId: styleTrace.value.rootComponentId,
-      nodeId: selectedId.value,
-      source: styleDraft.value,
-    })
+    await applyStyleSheetSource(styleDraft.value)
     statusMessage.value = 'Stylesheet applied'
     await refreshTree()
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : String(error)
   }
+}
+
+/** Применяет цвет как stylesheet override для выбранного UI Kit component id. */
+function applyColorStyle(row: StyleInspectorRow, color: string): void {
+  const trace = styleTrace.value
+  if (!trace || !row.declarationKey) return
+
+  const nextSource = appendStyleOverride(styleDraft.value, trace.nodeComponentId, row.declarationKey, color)
+  styleDraft.value = nextSource
+  statusMessage.value = `Style ${row.declarationKey} changed`
+
+  if (colorApplyTimer) window.clearTimeout(colorApplyTimer)
+  colorApplyTimer = window.setTimeout(() => {
+    void applyStyleSheetSource(nextSource).catch(error => {
+      errorMessage.value = error instanceof Error ? error.message : String(error)
+    })
+  }, 80)
+}
+
+/** Обрабатывает input[type=color] без дополнительного state на каждую строку. */
+function handleColorInput(row: StyleInspectorRow, event: Event): void {
+  const target = event.target as HTMLInputElement | null
+  if (target) applyColorStyle(row, target.value)
+}
+
+/** Применяет stylesheet source и обновляет trace для текущей node. */
+async function applyStyleSheetSource(source: string): Promise<void> {
+  if (!selectedId.value || !styleTrace.value) return
+
+  styleTrace.value = await requestNovaDevtools<NovaDevtoolsStyleTrace | null>('setRootStyleSheet', {
+    rootComponentId: styleTrace.value.rootComponentId,
+    nodeId: selectedId.value,
+    source,
+  })
+  errorMessage.value = ''
+}
+
+function startPickerPolling(): void {
+  stopPickerPolling()
+  pickerTimer = window.setInterval(() => {
+    void pollElementPicker()
+  }, 120)
+}
+
+function stopPickerPolling(): void {
+  if (!pickerTimer) return
+  window.clearInterval(pickerTimer)
+  pickerTimer = undefined
+}
+
+function flattenStyleRows(
+  source: string,
+  value: Record<string, NovaDevtoolsSerializable>,
+  prefix = '',
+): Array<StyleInspectorRow> {
+  const rows: Array<StyleInspectorRow> = []
+
+  for (const [key, childValue] of Object.entries(value)) {
+    const path = prefix ? `${prefix}.${key}` : key
+    if (childValue && typeof childValue === 'object' && !Array.isArray(childValue)) {
+      rows.push(...flattenStyleRows(source, childValue as Record<string, NovaDevtoolsSerializable>, path))
+      continue
+    }
+
+    const textValue = formatStyleValue(childValue)
+    rows.push({
+      source,
+      path,
+      label: path.split('.').at(-1) ?? path,
+      value: textValue,
+      colorHex: normalizeColorInputValue(textValue),
+      declarationKey: resolveStyleDeclarationKey(path),
+    })
+  }
+
+  return rows
+}
+
+function formatStyleValue(value: NovaDevtoolsSerializable): string {
+  if (value === null) return 'null'
+  if (typeof value === 'string') return value
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+  return JSON.stringify(value)
+}
+
+function normalizeColorInputValue(value: string): string | null {
+  const hex = value.trim()
+  const shortHexMatch = hex.match(/^#([0-9a-f]{3})$/i)
+  if (shortHexMatch) {
+    const [, source] = shortHexMatch
+    return `#${source.split('').map(item => item + item).join('')}`
+  }
+  const fullHexMatch = hex.match(/^#([0-9a-f]{6})(?:[0-9a-f]{2})?$/i)
+  if (fullHexMatch) return `#${fullHexMatch[1]}`
+
+  const rgbMatch = hex.match(/^rgba?\((\d+),\s*(\d+),\s*(\d+)/i)
+  if (!rgbMatch) return null
+
+  const [, red, green, blue] = rgbMatch
+  return `#${[red, green, blue]
+    .map(channel => Math.max(0, Math.min(255, Number(channel))).toString(16).padStart(2, '0'))
+    .join('')}`
+}
+
+function resolveStyleDeclarationKey(path: string): string | null {
+  const declarationKeys: Record<string, string> = {
+    'inheritedText.color': 'color',
+    'box.background': 'background',
+    'box.border.color': 'borderColor',
+    'visual.accentColor': 'accentColor',
+    'visual.trackColor': 'trackColor',
+    'visual.thumbColor': 'thumbColor',
+    'visual.hoverBackground': 'hoverBackground',
+    'visual.pressedBackground': 'pressedBackground',
+    'visual.activeBackground': 'activeBackground',
+  }
+
+  return declarationKeys[path] ?? null
+}
+
+function appendStyleOverride(source: string, componentId: string, key: string, value: string): string {
+  const marker = `/* Nova DevTools override: ${componentId} ${key} */`
+  const selector = `#${componentId}`
+  const block = [
+    marker,
+    `${selector} {`,
+    `  ${key}: ${value};`,
+    '}',
+  ].join('\n')
+  const existingBlock = new RegExp(
+    `\\n?${escapeRegExp(marker)}\\n${escapeRegExp(selector)}\\s*\\{[\\s\\S]*?\\}\\n?`,
+    'm',
+  )
+
+  if (existingBlock.test(source)) {
+    return source.replace(existingBlock, `\n${block}\n`)
+  }
+
+  const trimmed = source.trimEnd()
+
+  return `${trimmed}\n\n${block}\n`
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function startVerticalResize(event: PointerEvent): void {
+  startResizeTracking(event, shellSplitRef.value, 'vertical', ratio => {
+    topPaneRatio.value = ratio
+  })
+}
+
+function startTopColumnsResize(event: PointerEvent): void {
+  startResizeTracking(event, topPanesRef.value, 'horizontal', ratio => {
+    treePaneRatio.value = ratio
+  })
+}
+
+function startStyleColumnsResize(event: PointerEvent): void {
+  startResizeTracking(event, stylesContentRef.value, 'horizontal', ratio => {
+    styleEditorRatio.value = ratio
+  })
+}
+
+function startResizeTracking(
+  event: PointerEvent,
+  container: HTMLElement | null,
+  axis: 'horizontal' | 'vertical',
+  update: (ratio: number) => void,
+): void {
+  if (!container) return
+
+  event.preventDefault()
+  stopResizeTracking()
+  const move = (moveEvent: PointerEvent) => {
+    const rect = container.getBoundingClientRect()
+    const size = axis === 'horizontal' ? rect.width : rect.height
+    const start = axis === 'horizontal' ? rect.left : rect.top
+    const pointer = axis === 'horizontal' ? moveEvent.clientX : moveEvent.clientY
+
+    update(resolveResizeRatio(pointer - start, size))
+  }
+
+  const up = () => {
+    document.removeEventListener('pointermove', move)
+    document.removeEventListener('pointerup', up)
+    document.body.classList.remove('devtools-resizing')
+    resizeDispose = undefined
+  }
+  resizeDispose = up
+
+  document.body.classList.add('devtools-resizing')
+  document.addEventListener('pointermove', move)
+  document.addEventListener('pointerup', up)
+  move(event)
+}
+
+function stopResizeTracking(): void {
+  resizeDispose?.()
+  resizeDispose = undefined
+  document.body.classList.remove('devtools-resizing')
+}
+
+function resolveResizeRatio(offset: number, size: number): number {
+  if (size <= 0) return 50
+
+  const minRatio = Math.min(35, Math.max(12, 160 / size * 100))
+  const maxRatio = 100 - minRatio
+  const ratio = offset / size * 100
+
+  return Math.max(minRatio, Math.min(maxRatio, ratio))
 }
 </script>
 
@@ -122,13 +413,25 @@ async function applyStyleSheet(): Promise<void> {
         <h1>Nova</h1>
         <p>{{ statusMessage }}</p>
       </div>
-      <button
-        class="toolbar-button"
-        type="button"
-        @click="refreshAll"
-      >
-        Refresh
-      </button>
+      <div class="devtools-toolbar">
+        <button
+          class="toolbar-button picker-button"
+          :class="{ 'picker-button-active': inspecting }"
+          type="button"
+          title="Select Nova element on canvas"
+          @click="toggleElementPicker"
+        >
+          <span class="picker-crosshair" />
+          Select
+        </button>
+        <button
+          class="toolbar-button"
+          type="button"
+          @click="refreshAll"
+        >
+          Refresh
+        </button>
+      </div>
     </header>
 
     <section
@@ -138,8 +441,16 @@ async function applyStyleSheet(): Promise<void> {
       {{ errorMessage }}
     </section>
 
-    <section class="devtools-split">
-      <div class="top-panes">
+    <section
+      ref="shellSplitRef"
+      class="devtools-split"
+      :style="shellSplitStyle"
+    >
+      <div
+        ref="topPanesRef"
+        class="top-panes"
+        :style="topPanesStyle"
+      >
         <aside class="tree-pane">
           <div class="pane-title">
             Runtime tree
@@ -157,6 +468,14 @@ async function applyStyleSheet(): Promise<void> {
             Open a page with installed Nova DevTools runtime bridge.
           </div>
         </aside>
+
+        <div
+          class="split-resizer split-resizer-vertical"
+          role="separator"
+          aria-orientation="vertical"
+          title="Resize tree and node panes"
+          @pointerdown="startTopColumnsResize"
+        />
 
         <section class="details-pane">
           <div class="pane-title">
@@ -218,13 +537,23 @@ async function applyStyleSheet(): Promise<void> {
         </section>
       </div>
 
+      <div
+        class="split-resizer split-resizer-horizontal"
+        role="separator"
+        aria-orientation="horizontal"
+        title="Resize top and styles panes"
+        @pointerdown="startVerticalResize"
+      />
+
       <section class="styles-pane">
         <div class="pane-title">
           Nova Styles
         </div>
         <div
           v-if="styleTrace"
+          ref="stylesContentRef"
           class="styles-split-content"
+          :style="stylesContentStyle"
         >
           <div class="style-editor-pane">
             <label class="editor-label">
@@ -245,7 +574,51 @@ async function applyStyleSheet(): Promise<void> {
             </button>
           </div>
 
+          <div
+            class="split-resizer split-resizer-vertical split-resizer-styles"
+            role="separator"
+            aria-orientation="vertical"
+            title="Resize stylesheet and computed styles panes"
+            @pointerdown="startStyleColumnsResize"
+          />
+
           <div class="style-trace-pane">
+            <section
+              v-if="styleRows.length"
+              class="computed-styles"
+            >
+              <h2>Computed styles</h2>
+              <div
+                v-for="row in styleRows"
+                :key="`${row.source}-${row.path}`"
+                class="style-value-row"
+              >
+                <span class="style-value-source">{{ row.source }}</span>
+                <span class="style-value-name">{{ row.path }}</span>
+                <label
+                  v-if="row.colorHex && row.declarationKey"
+                  class="color-control"
+                >
+                  <input
+                    :value="row.colorHex"
+                    type="color"
+                    @input="handleColorInput(row, $event)"
+                  >
+                  <span
+                    class="color-swatch"
+                    :style="{ background: row.colorHex }"
+                  />
+                  <span>{{ row.value }}</span>
+                </label>
+                <span
+                  v-else
+                  class="style-value-text"
+                >
+                  {{ row.value }}
+                </span>
+              </div>
+            </section>
+
             <section
               v-if="diagnostics.length"
               class="diagnostics"

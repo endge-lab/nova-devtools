@@ -3,6 +3,9 @@ export type NovaDevtoolsCommand =
   | 'getTree'
   | 'inspectNode'
   | 'inspectAt'
+  | 'startElementPicker'
+  | 'stopElementPicker'
+  | 'getElementPickerState'
   | 'mutateNodeProps'
   | 'setRootStyleSheet'
   | 'getStyleTrace'
@@ -93,6 +96,13 @@ export interface NovaDevtoolsStyleTrace {
   currentProps: Record<string, NovaDevtoolsSerializable>
   appliedKeys: Array<string>
   diagnostics: Array<Record<string, NovaDevtoolsSerializable>>
+}
+
+export interface NovaDevtoolsElementPickerState {
+  active: boolean
+  hoveredNodeId: string | null
+  selectedNodeId: string | null
+  updatedAt: number
 }
 
 export interface NovaDevtoolsRequest<TPayload = Record<string, unknown>> {

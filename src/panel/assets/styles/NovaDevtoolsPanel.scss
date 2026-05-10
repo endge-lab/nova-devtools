@@ -11,8 +11,16 @@
 
 body {
   margin: 0;
-  min-width: 900px;
+  min-width: 0;
+  overflow: hidden;
   background: #111315;
+}
+
+html,
+body,
+#app {
+  width: 100%;
+  height: 100%;
 }
 
 button,
@@ -21,7 +29,13 @@ textarea {
 }
 
 .devtools-shell {
-  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100vh;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
   background:
     linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px),
     #111315;
@@ -29,13 +43,20 @@ textarea {
 }
 
 .devtools-header {
+  flex: 0 0 48px;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
   height: 48px;
+  min-width: 0;
   padding: 0 14px;
   border-bottom: 1px solid #2b3036;
   background: #171a1e;
+}
+
+.devtools-header > div:first-child {
+  min-width: 0;
 }
 
 .devtools-header h1 {
@@ -45,13 +66,26 @@ textarea {
 }
 
 .devtools-header p {
+  overflow: hidden;
   margin: 3px 0 0;
   color: #8f9aa8;
   font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.devtools-toolbar {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 8px;
+  align-items: center;
 }
 
 .toolbar-button,
 .primary-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   min-height: 28px;
   padding: 0 10px;
   border: 1px solid #3b424b;
@@ -67,6 +101,41 @@ textarea {
   background: #26313b;
 }
 
+.picker-button-active {
+  border-color: #22d3ee;
+  background: #12313f;
+  color: #ecfeff;
+}
+
+.picker-crosshair {
+  position: relative;
+  width: 13px;
+  height: 13px;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+}
+
+.picker-crosshair::before,
+.picker-crosshair::after {
+  position: absolute;
+  content: "";
+  background: currentColor;
+}
+
+.picker-crosshair::before {
+  left: 50%;
+  top: -4px;
+  width: 1px;
+  height: 19px;
+}
+
+.picker-crosshair::after {
+  left: -4px;
+  top: 50%;
+  width: 19px;
+  height: 1px;
+}
+
 .primary-button {
   align-self: flex-start;
   background: #164e63;
@@ -79,6 +148,7 @@ textarea {
 }
 
 .error-strip {
+  flex: 0 0 auto;
   padding: 8px 14px;
   border-bottom: 1px solid #6b2a2a;
   background: #331b1b;
@@ -87,16 +157,18 @@ textarea {
 }
 
 .devtools-split {
+  flex: 1;
   display: grid;
-  grid-template-rows: minmax(240px, 48%) minmax(260px, 52%);
-  height: calc(100vh - 48px);
+  grid-template-rows: minmax(0, var(--top-pane-size, 48%)) 6px minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
 }
 
 .top-panes {
   display: grid;
-  grid-template-columns: minmax(280px, 40%) minmax(360px, 60%);
+  grid-template-columns: minmax(0, var(--tree-pane-size, 40%)) 6px minmax(0, 1fr);
+  min-width: 0;
   min-height: 0;
-  border-bottom: 1px solid #2b3036;
 }
 
 .tree-pane,
@@ -105,13 +177,13 @@ textarea {
   min-width: 0;
   min-height: 0;
   overflow: auto;
-  border-right: 1px solid #2b3036;
   background: rgba(17, 19, 21, 0.96);
 }
 
-.details-pane,
 .styles-pane {
-  border-right: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .pane-title {
@@ -264,9 +336,11 @@ textarea {
 }
 
 .styles-split-content {
+  flex: 1;
   display: grid;
-  grid-template-columns: minmax(420px, 48%) minmax(360px, 52%);
-  min-height: calc(100% - 29px);
+  grid-template-columns: minmax(0, var(--style-editor-size, 48%)) 6px minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
 }
 
 .style-editor-pane,
@@ -281,7 +355,6 @@ textarea {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  border-right: 1px solid #2b3036;
 }
 
 .style-editor-pane .editor-label {
@@ -294,6 +367,141 @@ textarea {
   gap: 10px;
 }
 
+.split-resizer {
+  position: relative;
+  z-index: 2;
+  flex: 0 0 auto;
+  background: #20252b;
+  touch-action: none;
+}
+
+.split-resizer::before {
+  position: absolute;
+  content: "";
+  background: #3b424b;
+  transition: background 120ms ease;
+}
+
+.split-resizer:hover::before,
+.devtools-resizing .split-resizer::before {
+  background: #22d3ee;
+}
+
+.split-resizer-vertical {
+  width: 6px;
+  cursor: col-resize;
+  border-left: 1px solid #2b3036;
+  border-right: 1px solid #2b3036;
+}
+
+.split-resizer-vertical::before {
+  top: 8px;
+  bottom: 8px;
+  left: 2px;
+  width: 1px;
+}
+
+.split-resizer-horizontal {
+  height: 6px;
+  cursor: row-resize;
+  border-top: 1px solid #2b3036;
+  border-bottom: 1px solid #2b3036;
+}
+
+.split-resizer-horizontal::before {
+  top: 2px;
+  left: 8px;
+  right: 8px;
+  height: 1px;
+}
+
+.devtools-resizing {
+  cursor: col-resize;
+  user-select: none;
+}
+
+.computed-styles h2,
+.rules-list h2 {
+  margin: 0 0 8px;
+  font-size: 11px;
+  color: #8f9aa8;
+  text-transform: uppercase;
+}
+
+.computed-styles {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.style-value-row {
+  display: grid;
+  grid-template-columns: minmax(64px, 96px) minmax(0, 1fr) minmax(0, 0.8fr);
+  align-items: center;
+  gap: 10px;
+  min-height: 28px;
+  padding: 4px 8px;
+  border: 1px solid transparent;
+  background: #15191d;
+  font-size: 11px;
+}
+
+.style-value-row:hover {
+  border-color: #2b3036;
+  background: #1b2026;
+}
+
+.style-value-source {
+  color: #728091;
+}
+
+.style-value-name {
+  overflow: hidden;
+  color: #d7dde5;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.style-value-text {
+  overflow: hidden;
+  color: #9ca8b6;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.color-control {
+  position: relative;
+  display: inline-grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  color: #b8c3cf;
+  cursor: pointer;
+}
+
+.color-control input {
+  position: absolute;
+  inset: 0;
+  width: 18px;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.color-swatch {
+  width: 16px;
+  height: 16px;
+  border: 1px solid #586270;
+  border-radius: 3px;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.28);
+}
+
+.color-control span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .diagnostic-row {
   display: flex;
   gap: 8px;
@@ -302,13 +510,6 @@ textarea {
   border-radius: 4px;
   background: #2c2415;
   color: #ffdca8;
-}
-
-.rules-list h2 {
-  margin: 0 0 8px;
-  font-size: 11px;
-  color: #8f9aa8;
-  text-transform: uppercase;
 }
 
 .rule-row {

@@ -3,14 +3,25 @@ import path from 'path'
 import { defineConfig, type Plugin } from 'vite'
 import vue from '@vitejs/plugin-vue'
 
-function copyManifestPlugin(): Plugin {
+function copyStaticExtensionAssetsPlugin(): Plugin {
   return {
-    name: 'nova-devtools-copy-manifest',
+    name: 'nova-devtools-copy-static-extension-assets',
     closeBundle() {
-      const from = path.resolve(__dirname, 'src/extension/manifest.json')
-      const to = path.resolve(__dirname, 'dist/extension/manifest.json')
-      fs.mkdirSync(path.dirname(to), { recursive: true })
-      fs.copyFileSync(from, to)
+      const assets = [
+        {
+          from: path.resolve(__dirname, 'src/extension/manifest.json'),
+          to: path.resolve(__dirname, 'dist/extension/manifest.json'),
+        },
+        {
+          from: path.resolve(__dirname, '../../public/nova-logo.png'),
+          to: path.resolve(__dirname, 'dist/extension/icons/nova-logo.png'),
+        },
+      ]
+
+      for (const asset of assets) {
+        fs.mkdirSync(path.dirname(asset.to), { recursive: true })
+        fs.copyFileSync(asset.from, asset.to)
+      }
     },
   }
 }
@@ -32,7 +43,7 @@ export default defineConfig({
       },
     },
   },
-  plugins: [vue(), copyManifestPlugin()],
+  plugins: [vue(), copyStaticExtensionAssetsPlugin()],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),

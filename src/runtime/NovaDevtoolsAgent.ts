@@ -9,6 +9,7 @@ import type { NovaUiStyleInspectionDebug } from '@endge/nova-ui-kit'
 import type {
   NovaDevtoolsAppSummary,
   NovaDevtoolsBounds,
+  NovaDevtoolsElementPickerState,
   NovaDevtoolsNodeDetails,
   NovaDevtoolsNodeSnapshot,
   NovaDevtoolsRequest,
@@ -58,6 +59,13 @@ export class NovaDevtoolsAgent {
   private readonly appIds = new WeakMap<NovaApp<any>, string>()
   private appCounter = 0
   private highlightElement: HTMLDivElement | null = null
+  private pickerState: NovaDevtoolsElementPickerState = {
+    active: false,
+    hoveredNodeId: null,
+    selectedNodeId: null,
+    updatedAt: 0,
+  }
+  private pickerDispose: (() => void) | null = null
 
   /** Регистрирует NovaApp в debug bridge. */
   registerApp(app: NovaApp<any>, options: InstallNovaDevtoolsOptions = {}): () => void {
@@ -88,6 +96,14 @@ export class NovaDevtoolsAgent {
           return this.ok(this.inspectNode(String(readPayloadValue(request.payload, 'nodeId') ?? '')))
         case 'inspectAt':
           return this.ok(this.inspectAt(request.payload as unknown as InspectAtPayload))
+        case 'startElementPicker':
+          this.startElementPicker()
+          return this.ok(this.getElementPickerState())
+        case 'stopElementPicker':
+          this.stopElementPicker()
+          return this.ok(this.getElementPickerState())
+        case 'getElementPickerState':
+          return this.ok(this.getElementPickerState())
         case 'mutateNodeProps':
           return this.ok(this.mutateNodeProps(request.payload as unknown as NodePatchPayload))
         case 'setRootStyleSheet':
@@ -160,6 +176,98 @@ export class NovaDevtoolsAgent {
     return this.inspectNode(this.createNodeDevtoolsId(app.id, node))
   }
 
+  /** Включает режим выбора Nova node прямо на inspected page. */
+  startElementPicker(): void {
+    this.stopElementPicker(false)
+
+    const handlePointerMove = (event: PointerEvent) => {
+      const hit = this.findNodeAtClientPoint(event.clientX, event.clientY)
+      const nextNodeId = hit ? this.createNodeDevtoolsId(hit.appId, hit.node) : null
+
+      if (this.pickerState.hoveredNodeId === nextNodeId) return
+
+      this.pickerState = {
+        ...this.pickerState,
+        active: true,
+        hoveredNodeId: nextNodeId,
+        updatedAt: Date.now(),
+      }
+
+      if (nextNodeId) this.highlightNode(nextNodeId)
+      else this.clearHighlight()
+    }
+
+    const handleClick = (event: MouseEvent) => {
+      const hit = this.findNodeAtClientPoint(event.clientX, event.clientY)
+      if (!hit) return
+
+      const nodeId = this.createNodeDevtoolsId(hit.appId, hit.node)
+      event.preventDefault()
+      event.stopPropagation()
+      this.pickerState = {
+        active: false,
+        hoveredNodeId: nodeId,
+        selectedNodeId: nodeId,
+        updatedAt: Date.now(),
+      }
+      this.highlightNode(nodeId)
+      this.stopElementPicker(false)
+    }
+
+    const blockCanvasPointer = (event: PointerEvent | MouseEvent) => {
+      const hit = this.findNodeAtClientPoint(event.clientX, event.clientY)
+      if (!hit) return
+
+      event.preventDefault()
+      event.stopPropagation()
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') this.stopElementPicker()
+    }
+
+    document.addEventListener('pointermove', handlePointerMove, true)
+    document.addEventListener('pointerdown', blockCanvasPointer, true)
+    document.addEventListener('pointerup', blockCanvasPointer, true)
+    document.addEventListener('mousedown', blockCanvasPointer, true)
+    document.addEventListener('click', handleClick, true)
+    document.addEventListener('keydown', handleKeyDown, true)
+    document.documentElement.style.cursor = 'crosshair'
+
+    this.pickerState = {
+      active: true,
+      hoveredNodeId: null,
+      selectedNodeId: null,
+      updatedAt: Date.now(),
+    }
+    this.pickerDispose = () => {
+      document.removeEventListener('pointermove', handlePointerMove, true)
+      document.removeEventListener('pointerdown', blockCanvasPointer, true)
+      document.removeEventListener('pointerup', blockCanvasPointer, true)
+      document.removeEventListener('mousedown', blockCanvasPointer, true)
+      document.removeEventListener('click', handleClick, true)
+      document.removeEventListener('keydown', handleKeyDown, true)
+      document.documentElement.style.cursor = ''
+    }
+  }
+
+  /** Отключает режим выбора node на inspected page. */
+  stopElementPicker(clearHover = true): void {
+    this.pickerDispose?.()
+    this.pickerDispose = null
+    this.pickerState = {
+      active: false,
+      hoveredNodeId: clearHover ? null : this.pickerState.hoveredNodeId,
+      selectedNodeId: this.pickerState.selectedNodeId,
+      updatedAt: Date.now(),
+    }
+  }
+
+  /** Возвращает состояние page-side picker для DevTools panel polling. */
+  getElementPickerState(): NovaDevtoolsElementPickerState {
+    return { ...this.pickerState }
+  }
+
   /** Применяет live patch к props/component props выбранной node. */
   mutateNodeProps(payload: NodePatchPayload): NovaDevtoolsNodeDetails | null {
     const resolved = this.findNode(payload.nodeId)
@@ -226,6 +334,32 @@ export class NovaDevtoolsAgent {
   /** Убирает DOM overlay подсветки. */
   clearHighlight(): void {
     if (this.highlightElement) this.highlightElement.style.display = 'none'
+  }
+
+  private findNodeAtClientPoint(clientX: number, clientY: number): { appId: string; node: NovaNode<any> } | null {
+    const apps = [...this.apps.values()].reverse()
+
+    for (const item of apps) {
+      const canvas = readAppCanvasElement(item.app)
+      if (!canvas) continue
+
+      const rect = canvas.getBoundingClientRect()
+      if (
+        clientX < rect.left
+        || clientX > rect.right
+        || clientY < rect.top
+        || clientY > rect.bottom
+      ) {
+        continue
+      }
+
+      const x = (clientX - rect.left) * (item.app.width / Math.max(1, rect.width))
+      const y = (clientY - rect.top) * (item.app.height / Math.max(1, rect.height))
+      const node = item.app.events.hitTest(x, y)
+      if (node) return { appId: item.id, node }
+    }
+
+    return null
   }
 
   private createAppSnapshot(item: RegisteredNovaApp): NovaDevtoolsNodeSnapshot {
@@ -458,6 +592,11 @@ function readStyleRootApi(node: NovaNode<any>): NovaStyleRootApi | null {
   return typeof api.inspectStyleNode === 'function' || typeof api.setStyleSheetSource === 'function'
     ? api
     : null
+}
+
+function readAppCanvasElement(app: NovaApp<any>): HTMLCanvasElement | null {
+  const canvas = (app as unknown as { canvas?: { element?: HTMLCanvasElement } }).canvas
+  return canvas?.element instanceof HTMLCanvasElement ? canvas.element : null
 }
 
 function normalizeBounds(bounds: NovaBounds): NovaDevtoolsBounds {

@@ -4,5 +4,11 @@
   "description": "DevTools panel for inspecting Nova canvas runtime trees and Nova Styles Engine.",
   "version": "0.1.0",
   "devtools_page": "src/extension/devtools.html",
+  "icons": {
+    "16": "icons/nova-logo.png",
+    "32": "icons/nova-logo.png",
+    "48": "icons/nova-logo.png",
+    "128": "icons/nova-logo.png"
+  },
   "permissions": []
 }
