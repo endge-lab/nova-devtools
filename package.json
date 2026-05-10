@@ -1,0 +1,47 @@
+{
+  "name": "@endge/nova-devtools",
+  "private": false,
+  "version": "0.1.0",
+  "type": "module",
+  "module": "./dist/runtime/index.js",
+  "types": "./dist/runtime/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/runtime/index.d.ts",
+      "import": "./dist/runtime/index.js"
+    },
+    "./runtime": {
+      "types": "./dist/runtime/index.d.ts",
+      "import": "./dist/runtime/index.js"
+    },
+    "./protocol": {
+      "types": "./dist/runtime/protocol/index.d.ts",
+      "import": "./dist/runtime/protocol/index.js"
+    }
+  },
+  "sideEffects": false,
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "clean": "rimraf dist tsconfig.tsbuildinfo",
+    "build": "pnpm run build:runtime && pnpm run build:extension",
+    "build:runtime": "vite build --config vite.runtime.config.ts",
+    "build:extension": "vite build --config vite.extension.config.ts",
+    "dev:extension": "vite build --watch --config vite.extension.config.ts"
+  },
+  "dependencies": {
+    "@endge/nova": "workspace:*",
+    "@endge/nova-ui-kit": "workspace:*",
+    "vue": "^3.5.25"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.2.1",
+    "@vue/tsconfig": "^0.7.0",
+    "rimraf": "^6.0.1",
+    "typescript": "~5.7.3",
+    "vite": "^6.1.0",
+    "vite-plugin-dts": "^4.5.0",
+    "vue-tsc": "^2.2.0"
+  }
+}
