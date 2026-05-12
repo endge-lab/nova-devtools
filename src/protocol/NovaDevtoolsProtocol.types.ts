@@ -100,6 +100,7 @@ export interface NovaDevtoolsStyleTrace {
 
 export interface NovaDevtoolsElementPickerState {
   active: boolean
+  appId: string | null
   hoveredNodeId: string | null
   selectedNodeId: string | null
   updatedAt: number

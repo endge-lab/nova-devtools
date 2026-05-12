@@ -8,9 +8,18 @@ import type {
   NovaDevtoolsTreeSnapshot,
 } from '@/protocol'
 import { requestNovaDevtools } from '@/panel/NovaDevtoolsClient'
+import {
+  filterTreeBySelectedApp,
+  normalizeSelectedAppId,
+  NOVA_DEVTOOLS_AUTO_APP_ID,
+  resolvePickerAppId,
+  shouldShowCanvasSelector,
+  type NovaDevtoolsAppSelection,
+} from '@/panel/NovaDevtoolsPanelState'
 import NovaTreeView from '@/panel/features/tree/NovaTreeView.vue'
 
 const tree = ref<NovaDevtoolsTreeSnapshot>({ apps: [] })
+const selectedAppId = ref<NovaDevtoolsAppSelection>(NOVA_DEVTOOLS_AUTO_APP_ID)
 const selectedId = ref<string | null>(null)
 const selectedNode = ref<NovaDevtoolsNodeDetails | null>(null)
 const styleTrace = ref<NovaDevtoolsStyleTrace | null>(null)
@@ -42,6 +51,8 @@ interface StyleInspectorRow {
 }
 
 const hasRuntime = computed(() => tree.value.apps.length > 0)
+const visibleTree = computed(() => filterTreeBySelectedApp(tree.value, selectedAppId.value))
+const showCanvasSelector = computed(() => shouldShowCanvasSelector(tree.value.apps))
 const diagnostics = computed(() => styleTrace.value?.diagnostics ?? [])
 const shellSplitStyle = computed<Record<string, string>>(() => ({
   '--top-pane-size': `${topPaneRatio.value}%`,
@@ -90,6 +101,7 @@ async function refreshAll(): Promise<void> {
 async function refreshTree(): Promise<void> {
   try {
     tree.value = await requestNovaDevtools<NovaDevtoolsTreeSnapshot>('getTree')
+    selectedAppId.value = normalizeSelectedAppId(tree.value.apps, selectedAppId.value)
     errorMessage.value = ''
     statusMessage.value = hasRuntime.value ? 'Connected' : 'Runtime bridge not found'
   } catch (error) {
@@ -116,7 +128,11 @@ async function toggleElementPicker(): Promise<void> {
       return
     }
 
-    const state = await requestNovaDevtools<NovaDevtoolsElementPickerState>('startElementPicker')
+    const appId = resolvePickerAppId(selectedAppId.value)
+    const state = await requestNovaDevtools<NovaDevtoolsElementPickerState>(
+      'startElementPicker',
+      appId ? { appId } : undefined,
+    )
     inspecting.value = state.active
     startPickerPolling()
   } catch (error) {
@@ -414,6 +430,23 @@ function resolveResizeRatio(offset: number, size: number): number {
         <p>{{ statusMessage }}</p>
       </div>
       <div class="devtools-toolbar">
+        <select
+          v-if="showCanvasSelector"
+          v-model="selectedAppId"
+          class="canvas-selector"
+          title="Select Nova canvas"
+        >
+          <option :value="NOVA_DEVTOOLS_AUTO_APP_ID">
+            Auto
+          </option>
+          <option
+            v-for="app in tree.apps"
+            :key="app.appId"
+            :value="app.appId"
+          >
+            {{ app.label }}
+          </option>
+        </select>
         <button
           class="toolbar-button picker-button"
           :class="{ 'picker-button-active': inspecting }"
@@ -457,7 +490,7 @@ function resolveResizeRatio(offset: number, size: number): number {
           </div>
           <NovaTreeView
             v-if="hasRuntime"
-            :nodes="tree.apps"
+            :nodes="visibleTree.apps"
             :selected-id="selectedId"
             @select="selectNode"
           />

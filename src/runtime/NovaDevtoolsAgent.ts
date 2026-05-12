@@ -53,6 +53,10 @@ interface InspectAtPayload {
   y: number
 }
 
+interface ElementPickerPayload {
+  appId?: string | null
+}
+
 /** Runtime-agent, который отдает Nova state в Chrome DevTools panel. */
 export class NovaDevtoolsAgent {
   private readonly apps = new Map<string, RegisteredNovaApp>()
@@ -61,6 +65,7 @@ export class NovaDevtoolsAgent {
   private highlightElement: HTMLDivElement | null = null
   private pickerState: NovaDevtoolsElementPickerState = {
     active: false,
+    appId: null,
     hoveredNodeId: null,
     selectedNodeId: null,
     updatedAt: 0,
@@ -72,12 +77,17 @@ export class NovaDevtoolsAgent {
     const existingId = this.appIds.get(app)
     const id = options.id ?? existingId ?? `nova-app-${++this.appCounter}`
     const label = options.label ?? id
+    const existingApp = this.apps.get(id)?.app
+
+    if (existingId && existingId !== id) this.apps.delete(existingId)
+    if (existingApp && existingApp !== app) this.appIds.delete(existingApp)
 
     this.appIds.set(app, id)
     this.apps.set(id, { id, label, app })
 
     return () => {
-      if (this.apps.get(id)?.app === app) {
+      if (this.appIds.get(app) === id && this.apps.get(id)?.app === app) {
+        this.appIds.delete(app)
         this.apps.delete(id)
         this.clearHighlight()
       }
@@ -97,7 +107,7 @@ export class NovaDevtoolsAgent {
         case 'inspectAt':
           return this.ok(this.inspectAt(request.payload as unknown as InspectAtPayload))
         case 'startElementPicker':
-          this.startElementPicker()
+          this.startElementPicker(readPickerAppId(request.payload as ElementPickerPayload | undefined))
           return this.ok(this.getElementPickerState())
         case 'stopElementPicker':
           this.stopElementPicker()
@@ -177,11 +187,11 @@ export class NovaDevtoolsAgent {
   }
 
   /** Включает режим выбора Nova node прямо на inspected page. */
-  startElementPicker(): void {
+  startElementPicker(appId: string | null = null): void {
     this.stopElementPicker(false)
 
     const handlePointerMove = (event: PointerEvent) => {
-      const hit = this.findNodeAtClientPoint(event.clientX, event.clientY)
+      const hit = this.findNodeAtClientPoint(event.clientX, event.clientY, appId)
       const nextNodeId = hit ? this.createNodeDevtoolsId(hit.appId, hit.node) : null
 
       if (this.pickerState.hoveredNodeId === nextNodeId) return
@@ -189,6 +199,7 @@ export class NovaDevtoolsAgent {
       this.pickerState = {
         ...this.pickerState,
         active: true,
+        appId,
         hoveredNodeId: nextNodeId,
         updatedAt: Date.now(),
       }
@@ -198,7 +209,7 @@ export class NovaDevtoolsAgent {
     }
 
     const handleClick = (event: MouseEvent) => {
-      const hit = this.findNodeAtClientPoint(event.clientX, event.clientY)
+      const hit = this.findNodeAtClientPoint(event.clientX, event.clientY, appId)
       if (!hit) return
 
       const nodeId = this.createNodeDevtoolsId(hit.appId, hit.node)
@@ -206,6 +217,7 @@ export class NovaDevtoolsAgent {
       event.stopPropagation()
       this.pickerState = {
         active: false,
+        appId,
         hoveredNodeId: nodeId,
         selectedNodeId: nodeId,
         updatedAt: Date.now(),
@@ -215,7 +227,7 @@ export class NovaDevtoolsAgent {
     }
 
     const blockCanvasPointer = (event: PointerEvent | MouseEvent) => {
-      const hit = this.findNodeAtClientPoint(event.clientX, event.clientY)
+      const hit = this.findNodeAtClientPoint(event.clientX, event.clientY, appId)
       if (!hit) return
 
       event.preventDefault()
@@ -236,6 +248,7 @@ export class NovaDevtoolsAgent {
 
     this.pickerState = {
       active: true,
+      appId,
       hoveredNodeId: null,
       selectedNodeId: null,
       updatedAt: Date.now(),
@@ -257,6 +270,7 @@ export class NovaDevtoolsAgent {
     this.pickerDispose = null
     this.pickerState = {
       active: false,
+      appId: this.pickerState.appId,
       hoveredNodeId: clearHover ? null : this.pickerState.hoveredNodeId,
       selectedNodeId: this.pickerState.selectedNodeId,
       updatedAt: Date.now(),
@@ -336,8 +350,10 @@ export class NovaDevtoolsAgent {
     if (this.highlightElement) this.highlightElement.style.display = 'none'
   }
 
-  private findNodeAtClientPoint(clientX: number, clientY: number): { appId: string; node: NovaNode<any> } | null {
-    const apps = [...this.apps.values()].reverse()
+  private findNodeAtClientPoint(clientX: number, clientY: number, appId: string | null = null): { appId: string; node: NovaNode<any> } | null {
+    const apps = appId
+      ? [...this.apps.values()].filter(item => item.id === appId)
+      : [...this.apps.values()].reverse()
 
     for (const item of apps) {
       const canvas = readAppCanvasElement(item.app)
@@ -484,7 +500,7 @@ export class NovaDevtoolsAgent {
   private findStyleRootByComponentId(componentId: string): { appId: string; node: NovaNode<any>; api: NovaStyleRootApi } | null {
     for (const item of this.apps.values()) {
       const node = item.app.components.get(componentId)
-      if (!node) continue
+      if (!(node instanceof NovaNode)) continue
       const api = readStyleRootApi(node)
       if (api) return { appId: item.id, node, api }
     }
@@ -616,4 +632,10 @@ function readPayloadValue(payload: unknown, key: string): unknown {
   return payload && typeof payload === 'object'
     ? (payload as Record<string, unknown>)[key]
     : undefined
+}
+
+function readPickerAppId(payload: ElementPickerPayload | undefined): string | null {
+  return typeof payload?.appId === 'string' && payload.appId
+    ? payload.appId
+    : null
 }

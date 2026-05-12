@@ -24,7 +24,8 @@ body,
 }
 
 button,
-textarea {
+textarea,
+select {
   font: inherit;
 }
 
@@ -79,6 +80,22 @@ textarea {
   display: flex;
   gap: 8px;
   align-items: center;
+}
+
+.canvas-selector {
+  min-width: 156px;
+  max-width: 240px;
+  height: 28px;
+  padding: 0 28px 0 9px;
+  border: 1px solid #3b424b;
+  border-radius: 4px;
+  background: #20252b;
+  color: #d7dde5;
+  outline: none;
+}
+
+.canvas-selector:focus {
+  border-color: #1e7490;
 }
 
 .toolbar-button,
