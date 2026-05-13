@@ -17,7 +17,7 @@ import type {
   NovaDevtoolsStyleTrace,
   NovaDevtoolsTreeSnapshot,
 } from '@/protocol'
-import { toDevtoolsRecord } from '@/runtime/NovaDevtoolsSerialize'
+import { toDevtoolsRecord } from '@/runtime/nova-devtools-serialize'
 
 interface RegisteredNovaApp {
   id: string

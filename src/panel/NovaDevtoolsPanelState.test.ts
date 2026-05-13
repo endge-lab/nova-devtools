@@ -6,7 +6,7 @@ import {
   NOVA_DEVTOOLS_AUTO_APP_ID,
   resolvePickerAppId,
   shouldShowCanvasSelector,
-} from '@/panel/NovaDevtoolsPanelState'
+} from '@/panel/nova-devtools-panel-state'
 
 describe('NovaDevtoolsPanelState', () => {
   it('hides selector for a single app and normalizes selection to Auto', () => {

@@ -7,7 +7,7 @@ import type {
   NovaDevtoolsStyleTrace,
   NovaDevtoolsTreeSnapshot,
 } from '@/protocol'
-import { requestNovaDevtools } from '@/panel/NovaDevtoolsClient'
+import { requestNovaDevtools } from '@/panel/nova-devtools-client'
 import {
   filterTreeBySelectedApp,
   normalizeSelectedAppId,
@@ -15,7 +15,7 @@ import {
   resolvePickerAppId,
   shouldShowCanvasSelector,
   type NovaDevtoolsAppSelection,
-} from '@/panel/NovaDevtoolsPanelState'
+} from '@/panel/nova-devtools-panel-state'
 import NovaTreeView from '@/panel/features/tree/NovaTreeView.vue'
 
 const tree = ref<NovaDevtoolsTreeSnapshot>({ apps: [] })

@@ -1,1 +1,1 @@
-export * from '@/protocol/NovaDevtoolsProtocol.types'
+export * from '@/protocol/nova-devtools-protocol.types'
