@@ -6,6 +6,9 @@ import vue from '@vitejs/plugin-vue'
 function copyStaticExtensionAssetsPlugin(): Plugin {
   return {
     name: 'nova-devtools-copy-static-extension-assets',
+    /**
+     * Закрывает presentation-состояние текущего класса.
+     */
     closeBundle() {
       const assets = [
         {

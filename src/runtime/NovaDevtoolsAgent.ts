@@ -350,6 +350,9 @@ export class NovaDevtoolsAgent {
     if (this.highlightElement) this.highlightElement.style.display = 'none'
   }
 
+  /**
+   * Находит сущность по runtime-критериям NovaDevtoolsAgent.
+   */
   private findNodeAtClientPoint(clientX: number, clientY: number, appId: string | null = null): { appId: string; node: NovaNode<any> } | null {
     const apps = appId
       ? [...this.apps.values()].filter(item => item.id === appId)
@@ -378,6 +381,9 @@ export class NovaDevtoolsAgent {
     return null
   }
 
+  /**
+   * Создает runtime-сущность NovaDevtoolsAgent.
+   */
   private createAppSnapshot(item: RegisteredNovaApp): NovaDevtoolsNodeSnapshot {
     return {
       id: item.id,
@@ -394,6 +400,9 @@ export class NovaDevtoolsAgent {
     }
   }
 
+  /**
+   * Создает runtime-сущность NovaDevtoolsAgent.
+   */
   private createNodeSnapshot(appId: string, node: NovaNode<any>, depth: number): NovaDevtoolsNodeSnapshot {
     const componentId = isComponentNode(node) ? node.componentId : undefined
     const isSurface = node instanceof NovaSurface
@@ -425,12 +434,18 @@ export class NovaDevtoolsAgent {
     }
   }
 
+  /**
+   * Создает runtime-сущность NovaDevtoolsAgent.
+   */
   private createNodeLabel(node: NovaNode<any>): string {
     if (node instanceof NovaSurface) return `surface:${node.name}`
     if (isComponentNode(node)) return `${node.descriptor.name}#${node.componentId}`
     return `${node.__type} ${node.id}`
   }
 
+  /**
+   * Выполняет внутренний шаг readNodeProps для NovaDevtoolsAgent.
+   */
   private readNodeProps(node: NovaNode<any>): Record<string, any> {
     const base = {
       x: node.x,
@@ -458,6 +473,9 @@ export class NovaDevtoolsAgent {
     return toDevtoolsRecord(base)
   }
 
+  /**
+   * Находит сущность по runtime-критериям NovaDevtoolsAgent.
+   */
   private findNode(devtoolsId: string): { appId: string; node: NovaNode<any> } | null {
     const [appId, nodeId] = this.parseNodeDevtoolsId(devtoolsId)
     const app = this.apps.get(appId)
@@ -471,6 +489,9 @@ export class NovaDevtoolsAgent {
     return null
   }
 
+  /**
+   * Находит сущность по runtime-критериям NovaDevtoolsAgent.
+   */
   private findNodeInSubtree(root: NovaNode<any>, nodeId: string): NovaNode<any> | null {
     if (root.id === nodeId) return root
 
@@ -483,6 +504,9 @@ export class NovaDevtoolsAgent {
     return null
   }
 
+  /**
+   * Находит сущность по runtime-критериям NovaDevtoolsAgent.
+   */
   private findNearestStyleRoot(node: NovaNode<any>): { appId: string; node: NovaNode<any>; api: NovaStyleRootApi } | null {
     let current: unknown = node
     while (current instanceof NovaNode) {
@@ -497,6 +521,9 @@ export class NovaDevtoolsAgent {
     return null
   }
 
+  /**
+   * Находит сущность по runtime-критериям NovaDevtoolsAgent.
+   */
   private findStyleRootByComponentId(componentId: string): { appId: string; node: NovaNode<any>; api: NovaStyleRootApi } | null {
     for (const item of this.apps.values()) {
       const node = item.app.components.get(componentId)
@@ -508,6 +535,9 @@ export class NovaDevtoolsAgent {
     return null
   }
 
+  /**
+   * Нормализует входные данные NovaDevtoolsAgent.
+   */
   private normalizeStyleTrace(trace: NovaUiStyleInspectionDebug): NovaDevtoolsStyleTrace {
     return {
       rootComponentId: trace.rootComponentId,
@@ -528,6 +558,9 @@ export class NovaDevtoolsAgent {
     }
   }
 
+  /**
+   * Выполняет внутренний шаг countNodes для NovaDevtoolsAgent.
+   */
   private countNodes(app: NovaApp<any>): number {
     let count = 0
     for (const surface of app.surfaces) {
@@ -538,6 +571,9 @@ export class NovaDevtoolsAgent {
     return count
   }
 
+  /**
+   * Создает runtime-сущность NovaDevtoolsAgent.
+   */
   private createNodePath(node: NovaNode<any>): Array<string> {
     const path: Array<string> = []
     let current: unknown = node
@@ -548,6 +584,9 @@ export class NovaDevtoolsAgent {
     return path
   }
 
+  /**
+   * Нормализует и возвращает итоговое значение NovaDevtoolsAgent.
+   */
   private resolveDepth(node: NovaNode<any>): number {
     let depth = 0
     let current = node.parent
@@ -558,16 +597,25 @@ export class NovaDevtoolsAgent {
     return depth + 1
   }
 
+  /**
+   * Создает runtime-сущность NovaDevtoolsAgent.
+   */
   private createNodeDevtoolsId(appId: string, node: NovaNode<any>): string {
     return `${appId}::${node.id}`
   }
 
+  /**
+   * Разбирает входное значение NovaDevtoolsAgent.
+   */
   private parseNodeDevtoolsId(devtoolsId: string): [string, string] {
     const separator = devtoolsId.indexOf('::')
     if (separator < 0) return ['', devtoolsId]
     return [devtoolsId.slice(0, separator), devtoolsId.slice(separator + 2)]
   }
 
+  /**
+   * Выполняет внутренний шаг ensureHighlightElement для NovaDevtoolsAgent.
+   */
   private ensureHighlightElement(): HTMLDivElement {
     if (this.highlightElement) return this.highlightElement
 
@@ -584,10 +632,16 @@ export class NovaDevtoolsAgent {
     return element
   }
 
+  /**
+   * Выполняет внутренний шаг ok для NovaDevtoolsAgent.
+   */
   private ok<TResult>(result: TResult): NovaDevtoolsResponse<TResult> {
     return { ok: true, result }
   }
 
+  /**
+   * Выполняет внутренний шаг fail для NovaDevtoolsAgent.
+   */
   private fail(error: string): NovaDevtoolsResponse {
     return { ok: false, error }
   }
