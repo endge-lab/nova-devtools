@@ -21,6 +21,7 @@ import NovaTreeView from '@/panel/features/tree/NovaTreeView.vue'
 const tree = ref<NovaDevtoolsTreeSnapshot>({ apps: [] })
 const selectedAppId = ref<NovaDevtoolsAppSelection>(NOVA_DEVTOOLS_AUTO_APP_ID)
 const selectedId = ref<string | null>(null)
+const focusedId = ref<string | null>(null)
 const selectedNode = ref<NovaDevtoolsNodeDetails | null>(null)
 const styleTrace = ref<NovaDevtoolsStyleTrace | null>(null)
 const propsDraft = ref('{}')
@@ -114,8 +115,29 @@ async function refreshTree(): Promise<void> {
 /** Выбирает node, подсвечивает ее на canvas и читает детали. */
 async function selectNode(nodeId: string): Promise<void> {
   selectedId.value = nodeId
+  focusedId.value = null
   await inspectNode(nodeId)
   await requestNovaDevtools('highlightNode', { nodeId }).catch(() => undefined)
+}
+
+/** Подсвечивает node на canvas при наведении в Runtime tree без смены выбранных details. */
+function focusNode(nodeId: string): void {
+  focusedId.value = nodeId
+  void requestNovaDevtools('highlightNode', { nodeId }).catch(() => undefined)
+}
+
+/** Возвращает подсветку к выбранной node после ухода курсора с Runtime tree row. */
+function blurNode(nodeId: string): void {
+  if (focusedId.value !== nodeId) return
+
+  focusedId.value = null
+
+  if (selectedId.value) {
+    void requestNovaDevtools('highlightNode', { nodeId: selectedId.value }).catch(() => undefined)
+    return
+  }
+
+  void requestNovaDevtools('clearHighlight').catch(() => undefined)
 }
 
 /** Включает или выключает page-side picker, похожий на Chrome Elements selector. */
@@ -492,7 +514,10 @@ function resolveResizeRatio(offset: number, size: number): number {
             v-if="hasRuntime"
             :nodes="visibleTree.apps"
             :selected-id="selectedId"
+            :focused-id="focusedId"
             @select="selectNode"
+            @focus-node="focusNode"
+            @blur-node="blurNode"
           />
           <div
             v-else
