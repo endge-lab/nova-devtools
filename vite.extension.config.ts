@@ -16,7 +16,7 @@ function copyStaticExtensionAssetsPlugin(): Plugin {
           to: path.resolve(__dirname, 'dist/extension/manifest.json'),
         },
         {
-          from: path.resolve(__dirname, '../../public/nova-logo.png'),
+          from: resolveNovaLogoPath(),
           to: path.resolve(__dirname, 'dist/extension/icons/nova-logo.png'),
         },
       ]
@@ -27,6 +27,16 @@ function copyStaticExtensionAssetsPlugin(): Plugin {
       }
     },
   }
+}
+
+function resolveNovaLogoPath(): string {
+  const candidates = [
+    path.resolve(__dirname, '../../apps/egorkozelskij-nova-docs/public/nova-logo.png'),
+    path.resolve(__dirname, '../../public/nova-logo.png'),
+  ]
+  const logoPath = candidates.find(candidate => fs.existsSync(candidate))
+  if (!logoPath) throw new Error('Cannot find nova-logo.png for Nova DevTools extension build.')
+  return logoPath
 }
 
 export default defineConfig({
