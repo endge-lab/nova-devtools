@@ -1,7 +1,7 @@
 {
   "name": "@endge/nova-devtools",
   "private": false,
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "module": "./dist/runtime/index.js",
   "types": "./dist/runtime/index.d.ts",
@@ -32,8 +32,8 @@
     "test": "vitest run --config vite.test.config.ts"
   },
   "dependencies": {
-    "@endge/nova": "^0.5.1",
-    "@endge/nova-ui-kit": "^0.6.0",
+    "@endge/nova": "^0.13.4",
+    "@endge/nova-ui-kit": "^0.10.7",
     "vue": "^3.5.25"
   },
   "devDependencies": {
